@@ -1,0 +1,153 @@
+# general settings for image SR training
+name: train_CATANet_x3_finetune
+model_type: SRModel
+scale: 3
+num_gpu: auto
+manual_seed: 3407
+
+
+
+# distribution auto (options.py 134)
+# rank: ~
+# word_size: ~
+
+# other (train.py 101)
+# is_train: ~
+# dataset and data loader settings
+
+datasets:
+  train:
+    task: SR
+    name: DIV2K
+    type: PairedImageDataset
+    dataroot_gt: datasets/DIV2K/DIV2K_HR
+    dataroot_lq: datasets/DIV2K/DIV2K_LR_bicubic/x3
+    
+    filename_tmpl: '{}x2'
+    io_backend:
+      type: disk
+
+    gt_size: 192
+    lq_size: ~ # FLOPs compute
+    use_hflip: true
+    use_rot: true
+
+    # data loader
+    use_shuffle: true
+    num_worker_per_gpu: 8
+    batch_size_per_gpu: 8
+    dataset_enlarge_ratio: 100
+    prefetch_mode: 'cuda'
+    pin_memory: true
+
+  val_0:
+    name: Set5
+    type: PairedImageDataset
+    dataroot_gt: datasets/Set5/HR
+    dataroot_lq: datasets/Set5/LR_bicubic/X3
+    filename_tmpl: '{}x3'
+    io_backend:
+      type: disk
+  val_1:
+    name: Set14
+    type: PairedImageDataset
+    dataroot_gt: datasets/Set14/HR
+    dataroot_lq: datasets/Set14/LR_bicubic/X3
+    filename_tmpl: '{}x3'
+    io_backend:
+      type: disk
+
+# network structures
+network_g:
+  type: CATANet
+  upscale: 3
+  visual_config:
+    name: CATANet
+    # feature captrue
+    visualize_layers: ~
+    visualize_during_test: false   # test() save? one image
+    visualize_during_val: true    # val() save?
+    visualize_max_val_images: 3
+
+    visualize_weight_layers: ~
+    visualize_weight_freq: 4
+
+# path (options.py 180)
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+  experiments_root: ~
+
+# training settings
+train:
+  optim_g:
+    type: Adam
+    lr: !!float 2e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: MultiStepLR
+    milestones: [125000, 200000, 225000, 237500]
+    gamma: 0.5
+
+  total_iter: 250000
+  use_accumulation: true
+  accumulation_steps: 8
+  max_checkpoints: 20
+
+  # losses
+  pixel_opt:
+    type: MSELoss
+    loss_weight: 1.0
+    reduction: mean
+
+
+  # perceptual_opt:
+  #   type: PerceptualLoss
+  #   layer_weights:
+  #     conv1_2: 0.1
+  #     conv2_2: 0.1
+  #     conv3_4: 1.0
+  #     conv4_4: 1.0
+  #     conv5_4: 1.0
+  #   vgg_type: vgg19
+  #   vgg_path: pretrained_models/vgg19-dcbb9e9d.pth
+  #   use_input_norm: true
+  #   range_norm: false
+  #   perceptual_weight: 1.0
+  #   style_weight: 0.0
+  #   criterion: l1
+
+# validation settings  (train.py 207)
+val:
+  val_freq: !!float 2500
+  save_img: false
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr_pt
+      crop_border: 3
+      test_y_channel: true
+
+    ssim:
+      type: calculate_ssim_pt
+      crop_border: 3
+      test_y_channel: true
+
+
+
+# logging settings
+logger:
+  print_freq: 200
+  save_checkpoint_freq: !!float 2500
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
