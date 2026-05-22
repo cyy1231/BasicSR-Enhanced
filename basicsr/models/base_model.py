@@ -585,7 +585,8 @@ class BaseModel():
             and hasattr(self, 'tb_logger') 
             and self.tb_logger is not None
             and hasattr(self, '_weight_log_handles') 
-            and self._weight_log_handles):
+            and self._weight_log_handles
+               and self._is_last_accum_step):
                 for net_name in self._weight_log_handles.keys():
                     target_net = self._weight_log_configs[net_name].get('instance')        
                     if target_net is not None:
