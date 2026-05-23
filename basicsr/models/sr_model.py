@@ -34,7 +34,7 @@ class SRModel(BaseModel):
             self.load_network(self.net_g, load_path, self.opt['path'].get('strict_load_g', True), param_key)
 
         if self.is_train:
-            self.save_network_architecture(self.net_g)
+            self.save_network_architecture(self.net_g, save_name='net_arch.md')
             self.save_network_complexity(self.net_g)
             self.init_training_settings()
 

@@ -161,56 +161,65 @@ class BaseModel():
         logger.info(f'Network: {net_cls_str}, with parameters: {net_params:,d}')
 
     @master_only
-    def save_network_architecture(self, net, save_name='network_arch.txt'):
-        """Save layer-by-layer network architecture to a dedicated text file.
-        
-        File includes:
-          - Layer name, module type, parameter count, trainable flag
-          - Total / trainable / non-trainable parameter summary
+    def save_network_architecture(self, net, save_name='network_arch.txt',
+                                   exporter_fn=None, fmt=None):
+        """Save layer-by-layer network architecture to a dedicated file.
+
+        Supports multiple output formats: txt, json, md, csv.
+        Users may also provide a custom exporter_fn.
+
+        Args:
+            net (nn.Module): Network to analyze.
+            save_name (str): Output filename. The extension determines the
+                format if fmt is not specified (.txt, .json, .md, .csv).
+            exporter_fn (callable, optional): Custom exporter function.
+                Signature: fn(net, save_path, net_cls_name, device).
+                If provided, fmt is ignored.
+            fmt (str, optional): Output format, overriding extension detection.
+                Options: 'txt', 'json', 'md', 'csv'.
+
+        Raises:
+            ValueError: If fmt is unknown and no exporter_fn is provided.
         """
+        from basicsr.utils.arch_exporter import get_exporter, export_arch_text
+
         net = self.get_bare_model(net)
-        save_path = os.path.join(self.opt['path']['experiments_root'], save_name)
+
+        # Determine which exporter to use
+        if exporter_fn is not None:
+            # User-provided custom exporter
+            pass
+        else:
+            if fmt is None:
+                # Infer format from file extension
+                ext = os.path.splitext(save_name)[1].lstrip('.').lower()
+                fmt = ext if ext in ('json', 'md', 'csv') else 'txt'
+            exporter_fn = get_exporter(fmt)
+
+        save_path = os.path.join(
+            self.opt['path']['experiments_root'], save_name
+        )
         logger = get_root_logger()
 
-        lines = []
-        lines.append('=' * 90)
-        lines.append(f'Network Class: {net.__class__.__name__}')
-        lines.append(f'Device: {next(net.parameters()).device}')
-        lines.append('=' * 90)
-        lines.append('')
-        lines.append(f'{"Layer":<<45} {"Type":<<25} {"Params":>12} {"Trainable":>10}')
-        lines.append('-' * 90)
+        # Extract network metadata
+        if isinstance(net, (DataParallel, DistributedDataParallel)):
+            net_cls_str = (
+                f'{net.__class__.__name__} - '
+                f'{net.module.__class__.__name__}'
+            )
+        else:
+            net_cls_str = net.__class__.__name__
 
-        total_params = 0
-        trainable_params = 0
-        for name, module in net.named_modules():
-            # Skip container modules to avoid duplicate parameter counting
-            if list(module.children()):
-                continue
-            num_params = sum(p.numel() for p in module.parameters())
-            total_params += num_params
-            trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
-            trainable_params += trainable
+        device = next(net.parameters()).device
 
-            mod_type = module.__class__.__name__
-            if num_params > 0:
-                flag = 'True' if trainable > 0 else 'False'
-                lines.append(f'{name:<45} {mod_type:<25} {num_params:>12,} {flag:>10}')
-            else:
-                lines.append(f'{name:<45} {mod_type:<25} {"--":>12} {"--":>10}')
+        # Execute export
+        exporter_fn(net, save_path, net_cls_str, device)
 
-        lines.append('-' * 90)
-        lines.append(f'Total parameters:      {total_params:>12,}')
-        lines.append(f'Trainable parameters:  {trainable_params:>12,}')
-        lines.append(f'Non-trainable params:  {total_params - trainable_params:>12,}')
-        lines.append('=' * 90)
-
-        with open(save_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-
+        # Log summary
+        total_params = sum(p.numel() for p in net.parameters())
         logger.info(
             f'Network architecture saved to {save_path} '
-            f'(Total params: {total_params:,})'
+            f'(Format: {fmt or "custom"}, Total params: {total_params:,})'
         )
 
     @master_only
@@ -912,4 +921,8 @@ class BaseModel():
                 tb_logger.add_histogram(tag_g, g, current_iter)
 
         grads.clear()
+
+
+
+
 
