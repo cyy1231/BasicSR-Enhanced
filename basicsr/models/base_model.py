@@ -155,12 +155,10 @@ class BaseModel():
             net_cls_str = f'{net.__class__.__name__}'
 
         net = self.get_bare_model(net)
-        net_str = str(net)
         net_params = sum(map(lambda x: x.numel(), net.parameters()))
 
         logger = get_root_logger()
         logger.info(f'Network: {net_cls_str}, with parameters: {net_params:,d}')
-        logger.info(net_str)
 
     @master_only
     def save_network_architecture(self, net, save_name='network_arch.txt'):
@@ -586,7 +584,7 @@ class BaseModel():
             and self.tb_logger is not None
             and hasattr(self, '_weight_log_handles') 
             and self._weight_log_handles
-               and self._is_last_accum_step):
+            and self._is_last_accum_step):
                 for net_name in self._weight_log_handles.keys():
                     target_net = self._weight_log_configs[net_name].get('instance')        
                     if target_net is not None:
@@ -650,6 +648,7 @@ class BaseModel():
             layer_names (list[str]): Names of layers to hook. 
                 If None, read from opt['visualize_layers'].
         """
+        # defensive
         if target_net is None:
             logger = get_root_logger()
             logger.warning(f'[Hook-{net_name}] target_net is None, skip feature hooks')
@@ -660,6 +659,7 @@ class BaseModel():
             logger.warning(f'[Hook-{net_name}] layer_names is empty, skip feature hooks')
             return
 
+        # init
         if not hasattr(self, '_captured_features'):
             self._captured_features = {}
         if not hasattr(self, '_feature_hook_handles'):
@@ -680,7 +680,7 @@ class BaseModel():
             if name in layer_names:
                 handle = module.register_forward_hook(make_hook(name))
                 self._feature_hook_handles[net_name].append(handle)
-                logger.info(f'[Hook-{net_name}] Registered feature capture: {name}')
+                logger.debug(f'[Hook-{net_name}] Registered feature capture: {name}')
 
     def remove_feature_hooks(self, net_name=None):
         """Remove forward hooks.
@@ -703,7 +703,7 @@ class BaseModel():
             num_hooks = len(handles)
             if num_hooks > 0:
                 logger = get_root_logger()
-                logger.info(f'[Hook-{net_name}] Removed {num_hooks} feature capture hook(s)')
+                logger.debug(f'[Hook-{net_name}] Removed {num_hooks} feature capture hook(s)')
         else:
             # all net remove
             for name, handles in self._feature_hook_handles.items():
@@ -716,23 +716,22 @@ class BaseModel():
             self._feature_hook_handles = {}
             if total > 0:
                 logger = get_root_logger()
-                logger.info(f'[Hook] Removed {total} feature capture hook(s) total')
+                logger.debug(f'[Hook] Removed {total} feature capture hook(s) total')
 
-    def save_captured_features(self, save_dir, net_name='net', prefix='', max_channels=64, nrow=8):
-        """Save captured intermediate features as image grids.
+    def save_captured_features(self, save_dir, net_name='net', prefix='', 
+                               visualizer_fn=None):
+        """Save captured intermediate features using an external visualizer.
         
         Args:
             save_dir (str): Directory to save images.
             net_name (str): Which network's features to save.
             prefix (str): Filename prefix.
-            max_channels (int): Max channels to visualize per layer.
-            nrow (int): Number of feature maps per row.
+            visualizer_fn (callable): Function to process and save each feature tensor.
+                Signature: fn(tensor, save_path, **vis_kwargs).
+                If None, uses default_feature_visualizer from basicsr.utils.visualize.
+            **vis_kwargs: Additional arguments passed to visualizer_fn.
         """
-        import math
-        import numpy as np
-        from PIL import Image
-
-        os.makedirs(save_dir, exist_ok=True)
+        from basicsr.utils.visualize import default_feature_visualizer, save_rgb_image
         
         if not hasattr(self, '_captured_features'):
             return
@@ -741,36 +740,25 @@ class BaseModel():
         if not features:
             return
 
+        if visualizer_fn is None:
+            visualizer_fn = default_feature_visualizer
+
+        os.makedirs(save_dir, exist_ok=True)
+
         for layer_name, tensor in features.items():
             if tensor.dim() != 4:
                 continue
-            feat = tensor[0]
+
+            feat = tensor[0]  # (C, H, W)
             C, H, W = feat.shape
-            if C > max_channels:
-                feat = feat[:max_channels]
-                C = max_channels
-
-            feat_np = feat.numpy()
-            feat_min = feat_np.min(axis=(1, 2), keepdims=True)
-            feat_max = feat_np.max(axis=(1, 2), keepdims=True)
-            feat_np = (feat_np - feat_min) / (feat_max - feat_min + 1e-8)
-            feat_np = (feat_np * 255).astype(np.uint8)
-
-            ncol = math.ceil(C / nrow)
-            pad = 2
-            grid_h = ncol * H + (ncol - 1) * pad
-            grid_w = nrow * W + (nrow - 1) * pad
-            grid = np.zeros((grid_h, grid_w), dtype=np.uint8)
-
-            for i in range(C):
-                row = i % nrow
-                col = i // nrow
-                y = col * (H + pad)
-                x = row * (W + pad)
-                grid[y:y+H, x:x+W] = feat_np[i]
 
             fname = f"{prefix}_{net_name}_{layer_name.replace('.', '_')}.png"
-            Image.fromarray(grid).save(os.path.join(save_dir, fname))
+            save_path = os.path.join(save_dir, fname)
+
+            if C == 3:
+                save_rgb_image(feat, save_path)
+            else:
+                default_feature_visualizer(tensor, save_path)
         
         self._captured_features[net_name].clear()
 

@@ -25,7 +25,7 @@ datasets:
     name: DIV2K
     type: PairedImageDataset
     dataroot_gt: datasets/DIV2K/DIV2K_HR
-    dataroot_lq: datasets/DIV2K/DIV2K_LR_bicubic/x2
+    dataroot_lq: datasets/DIV2K/DIV2K_LR_bicubic/X2
     
     filename_tmpl: '{}x2' # dataset HQ and LQ name different
     io_backend:
@@ -95,13 +95,13 @@ network_g:
   visual_config:
     name: CATANet
     # feature captrue
-    visualize_layers: ~  
+    visualize_layers: ['last_conv', 'first_conv']  
     visualize_during_test: false   # test() save? one image
     visualize_during_val: true    # val() save?
     visualize_max_val_images: 3
 
     visualize_weight_layers: ~ 
-    visualize_weight_freq: 4
+    visualize_weight_freq: 1250
 
 # path (options.py 180)
 path:

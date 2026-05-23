@@ -156,6 +156,7 @@ def parse_options(root_path, is_train=True):
 
     opt['auto_resume'] = args.auto_resume
     opt['is_train'] = is_train
+    opt['debug'] = args.debug
 
     # debug setting
     if args.debug and not opt['name'].startswith('debug'):

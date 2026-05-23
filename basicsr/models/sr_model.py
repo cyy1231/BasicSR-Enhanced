@@ -167,7 +167,7 @@ class SRModel(BaseModel):
             prefix = f'iter_{getattr(self, "current_iter", "test")}'
             self.save_captured_features(
                 vis_dir, 
-                net_name=self.net_g_weight_visual_config.get('name', 'CATANet'),
+                net_name=self.net_g_weight_visual_config.get('name'),
                 prefix=prefix
             )
             self.remove_feature_hooks()
@@ -269,7 +269,7 @@ class SRModel(BaseModel):
                                    dataset_name, 'features', f'{img_name}')
                 self.save_captured_features(
                     vis_dir,
-                    net_name=self.net_g_weight_visual_config.get('name', 'CATANet'),
+                    net_name=self.net_g_weight_visual_config.get('name'),
                     prefix=f'iter_{current_iter}'
                 )
                 self.remove_feature_hooks()

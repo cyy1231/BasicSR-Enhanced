@@ -21,7 +21,7 @@ datasets:
     name: DIV2K
     type: PairedImageDataset
     dataroot_gt: datasets/DIV2K/DIV2K_HR
-    dataroot_lq: datasets/DIV2K/DIV2K_LR_bicubic/x4
+    dataroot_lq: datasets/DIV2K/DIV2K_LR_bicubic/X4
     
     filename_tmpl: '{}x4'
     io_backend:
@@ -70,7 +70,7 @@ network_g:
     visualize_max_val_images: 3
 
     visualize_weight_layers: ~ 
-    visualize_weight_freq: 4
+    visualize_weight_freq: 1250
 
 # path (options.py 180)
 path:
