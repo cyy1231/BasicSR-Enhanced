@@ -273,7 +273,7 @@ class BaseModel():
             from ptflops import get_model_complexity_info
             in_chans = self.opt.get('network_g', {}).get('num_in_ch', 3)
             macs, params = get_model_complexity_info(
-                net, (in_chans, input_h, input_w), as_strings=True,
+                net, input_res, as_strings=True,
                 print_per_layer_stat=False, verbose=False
             )
             lines.append(f'MACs (GMac):           {macs}')
@@ -421,7 +421,7 @@ class BaseModel():
                                    f'{crt_net[k].shape}; load_net: {load_net[k].shape}')
                     load_net[k + '.ignore'] = load_net.pop(k)
 
-    def load_network(self, net, load_path, strict=True, param_key='params'):
+    def load_network(self, net, load_path, strict=True, param_key='params_ema'):
         """Load network.
 
         Args:
@@ -921,7 +921,38 @@ class BaseModel():
                 tb_logger.add_histogram(tag_g, g, current_iter)
 
         grads.clear()
+        
+    def reset_momentums(self, optimizer=None):
+        """Reset Adam-family (Adam/AdamW/Adamax) optimizer momentum states.
 
+        Args:
+            optimizer (torch.optim.Optimizer, optional): Target optimizer.
+                If None, tries self.optimizer_g. Useful when a model has
+                multiple optimizers (e.g., generator + discriminator).
+        """
+        if optimizer is None:
+            optimizer = getattr(self, 'optimizer_g', None)
+
+        if optimizer is None:
+            logger = get_root_logger()
+            logger.warning('reset_momentums: no optimizer provided, skipping.')
+            return
+
+        opt_state = optimizer.state_dict().get('state', {})
+        reset_any = False
+        for state in opt_state.values():
+            if isinstance(state, dict) and 'exp_avg' in state:
+                state['step'] = torch.zeros_like(state['step'])
+                state['exp_avg'] = torch.zeros_like(state['exp_avg'])
+                state['exp_avg_sq'] = torch.zeros_like(state['exp_avg_sq'])
+                reset_any = True
+
+        if not reset_any:
+            logger = get_root_logger()
+            logger.warning(
+                'reset_momentums: no Adam-style state found; '
+                'optimizer may not be Adam/AdamW/Adamax.'
+            )
 
 
 

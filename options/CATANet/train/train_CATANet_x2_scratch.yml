@@ -106,6 +106,7 @@ network_g:
 # path (options.py 180)
 path:
   pretrain_network_g: ~
+  param_key_g: ~  # params / params_ema
   strict_load_g: true
   resume_state: ~
   experiments_root: ~
@@ -129,6 +130,8 @@ train:
   accumulation_steps: 8
   max_checkpoints: 20
   warmup_iter: -1  # no warm up
+  gradient_clip: ~ # float
+  reset_momentum_iter: ~ # int
 
 
   # losses
@@ -136,7 +139,6 @@ train:
     type: MSELoss
     loss_weight: 1.0
     reduction: mean
-
 
   # perceptual_opt:
   #   type: PerceptualLoss
@@ -153,6 +155,17 @@ train:
   #   perceptual_weight: 1.0
   #   style_weight: 0.0
   #   criterion: l1
+
+  # wave_opt:
+  #   type: WaveletLoss
+  #   loss_weight: 0.1
+
+  # mesa_opt:
+  #   type: L1Loss
+  #   loss_weight: 0.1
+  #   start_ratio: 0.33
+
+
 
 # validation settings  (train.py 207)
 val:

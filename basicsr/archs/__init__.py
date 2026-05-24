@@ -1,6 +1,7 @@
 import importlib
 from copy import deepcopy
 from os import path as osp
+import os
 
 from basicsr.utils import get_root_logger, scandir
 from basicsr.utils.registry import ARCH_REGISTRY
@@ -10,9 +11,26 @@ __all__ = ['build_network']
 # automatically scan and import arch modules for registry
 # scan all the files under the 'archs' folder and collect files ending with '_arch.py'
 arch_folder = osp.dirname(osp.abspath(__file__))
-arch_filenames = [osp.splitext(osp.basename(v))[0] for v in scandir(arch_folder) if v.endswith('_arch.py')]
-# import all the arch modules
-_arch_modules = [importlib.import_module(f'basicsr.archs.{file_name}') for file_name in arch_filenames]
+
+arch_filenames = []
+for root, dirs, files in os.walk(arch_folder):
+    dirs[:] = [d for d in dirs if not d.startswith('_')]
+    for f in files:
+        if f.endswith('_arch.py'):
+            rel_dir = osp.relpath(root, arch_folder).replace(os.sep, '.')
+            module_name = osp.splitext(f)[0]
+            if rel_dir == '.':
+                arch_filenames.append(f'basicsr.archs.{module_name}')
+            else:
+                arch_filenames.append(f'basicsr.archs.{rel_dir}.{module_name}')
+
+# auto import
+for module_path in arch_filenames:
+    try:
+        importlib.import_module(module_path)
+    except Exception as e:
+        logger = get_root_logger()
+        logger.warning(f'Failed to import {module_path}: {e}')
 
 
 def build_network(opt):

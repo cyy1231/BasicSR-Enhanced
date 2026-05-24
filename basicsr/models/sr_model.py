@@ -30,7 +30,7 @@ class SRModel(BaseModel):
         # load pretrained models
         load_path = self.opt['path'].get('pretrain_network_g', None)
         if load_path is not None:
-            param_key = self.opt['path'].get('param_key_g', 'params')
+            param_key = self.opt['path'].get('param_key_g', 'params_ema')
             self.load_network(self.net_g, load_path, self.opt['path'].get('strict_load_g', True), param_key)
 
         if self.is_train:
@@ -82,9 +82,24 @@ class SRModel(BaseModel):
             self.cri_perceptual = build_loss(train_opt['perceptual_opt']).to(self.device)
         else:
             self.cri_perceptual = None
+        if train_opt.get('mesa_opt'):
+            start_ratio = train_opt['mesa_opt'].pop('start_ratio', 0.33)
+            self.mesa_start_iter = int(start_ratio * train_opt['total_iter'])
+            self.cri_mesa = build_loss(train_opt['mesa_opt']).to(self.device)
+        else:
+            self.cri_mesa = None
+        if train_opt.get('wave_opt'):
+            self.cri_wave = build_loss(train_opt['wave_opt']).to(self.device)
+        else:
+            self.cri_wave = None
 
-        if self.cri_pix is None and self.cri_perceptual is None:
-            raise ValueError('Both pixel and perceptual losses are None.')
+        if self.cri_pix is None and self.cri_perceptual is None and self.cri_wave is None:
+            raise ValueError('Pixel, perceptual and wavelet losses are None.')
+        
+        # grad clip init
+        self.gradient_clip = train_opt.get('gradient_clip', None)
+        # reset momentum init
+        self.reset_momentum_iter = train_opt.get('reset_momentum_iter', None)
 
         # set up optimizers and schedulers
         self.setup_optimizers()
@@ -141,11 +156,41 @@ class SRModel(BaseModel):
             if l_style is not None:
                 l_total += l_style
                 loss_dict['l_style'] = l_style
+        # mesa loss (self loss)
+        if self.cri_mesa:
+            if current_iter >= self.mesa_start_iter:
+                with torch.no_grad():
+                    output_emas = self.net_g_ema(self.lq)
+                l_mesa = self.cri_mesa(self.output, output_emas)
+                l_total += l_mesa
+                loss_dict['l_mesa'] = l_mesa
+            else:
+                l_mesa = torch.zeros(1, device=self.device)
+                loss_dict['l_mesa'] = l_mesa
+        # wave loss
+        if self.cri_wave:
+            l_wave = self.cri_wave(self.output, self.gt)
+            l_total += l_wave
+            loss_dict['l_wave'] = l_wave
 
         l_total = self._scale_loss_for_accumulation(l_total)
         l_total.backward()
 
+        # grad clip
+        if self.gradient_clip is not None:
+            clip_val = self.gradient_clip
+            if current_iter > 50000:
+                clip_val = clip_val / 2
+            torch.nn.utils.clip_grad_norm_(self.net_g.parameters(), clip_val)
+
         self.log_dict = self._accumulation_step_end(loss_dict, current_iter=current_iter)
+
+        # reset status
+        if self.reset_momentum_iter is not None:
+            if current_iter % self.reset_momentum_iter == 0:
+                logger = get_root_logger()
+                logger.info(f'Reset momentums for net_g at iteration {current_iter}')
+                self.reset_momentums(self.optimizer_g)
 
     def test(self):
         target_net = getattr(self, 'net_g_ema', self.net_g)
@@ -208,7 +253,7 @@ class SRModel(BaseModel):
         else:
             self.net_g.eval()
             with torch.no_grad():
-                out_list = [self.net_g_ema(aug) for aug in lq_list]
+                out_list = [self.net_g(aug) for aug in lq_list]
             self.net_g.train()
 
         # merge results

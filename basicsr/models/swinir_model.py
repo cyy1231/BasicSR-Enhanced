@@ -51,6 +51,4 @@ class SwinIRModel(SRModel):
             self.net_g.train()
         # end
 
-
-        _, _, h, w = self.output.size()
-        self.output = self.output[:, :, 0:h - mod_pad_h * scale, 0:w - mod_pad_w * scale]
+        self.output = self.output[:, :, :h * scale, :w * scale]
