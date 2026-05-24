@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 import os
 
 import torch
@@ -192,30 +193,55 @@ class SRModel(BaseModel):
                 logger.info(f'Reset momentums for net_g at iteration {current_iter}')
                 self.reset_momentums(self.optimizer_g)
 
+    @contextmanager
+    def feature_visualization(self, vis_dir: str, prefix: str, target_net=None):
+        """
+        Context manager for feature capture lifecycle:
+        setup hooks → yield for inference → save features → remove hooks.
+        Uses raw dict config (net_g_weight_visual_config).
+        """
+        cfg = self.net_g_weight_visual_config
+        layers = cfg.get('visualize_layers')
+        if not layers:
+            yield
+            return
+
+        if target_net is None:
+            target_net = getattr(self, 'net_g_ema', self.net_g)
+
+        net_name = cfg.get('name', 'net_g')
+        self.setup_feature_hooks(
+            target_net=target_net,
+            net_name=net_name,
+            layer_names=layers
+        )
+        try:
+            yield
+        finally:
+            if hasattr(self, '_captured_features'):
+                self.save_captured_features(vis_dir, net_name=net_name, prefix=prefix)
+                self.remove_feature_hooks()
+
     def test(self):
+        """Standard test inference. Feature visualization controlled by 'visualize_during_test' config."""
         target_net = getattr(self, 'net_g_ema', self.net_g)
         target_net.eval()
 
-        do_visualize = self.net_g_weight_visual_config.get('visualize_layers') and self.net_g_weight_visual_config.get('visualize_during_test', False)
+        cfg = self.net_g_weight_visual_config
+        do_visualize = cfg.get('visualize_layers') and cfg.get('visualize_during_test', False)
+
         if do_visualize:
-            self.setup_feature_hooks(
-                target_net=target_net,
-                net_name=self.net_g_weight_visual_config.get('name', 'net_g'),
-                layer_names=self.net_g_weight_visual_config.get('visualize_layers')
+            vis_dir = os.path.join(
+                self.opt['path'].get('visualization', 'visualization'), 
+                'features'
             )
-
-        with torch.no_grad():
-            self.output = target_net(self.lq)
-
-        if do_visualize and hasattr(self, '_captured_features'):
-            vis_dir = os.path.join(self.opt['path'].get('visualization', 'visualization'), 'features')
             prefix = f'iter_{getattr(self, "current_iter", "test")}'
-            self.save_captured_features(
-                vis_dir, 
-                net_name=self.net_g_weight_visual_config.get('name'),
-                prefix=prefix
-            )
-            self.remove_feature_hooks()
+            with self.feature_visualization(vis_dir, prefix, target_net):
+                with torch.no_grad():
+                    self.output = target_net(self.lq)
+        else:
+            with torch.no_grad():
+                self.output = target_net(self.lq)
 
         if not hasattr(self, 'net_g_ema'):
             self.net_g.train()
@@ -295,29 +321,22 @@ class SRModel(BaseModel):
             self.feed_data(val_data)
 
             # feature captrue
-            visualize_max_val_images = self.net_g_weight_visual_config.get('visualize_max_val_images', 3)
-            save_feat = (idx < visualize_max_val_images) and self.net_g_weight_visual_config.get('visualize_layers') and self.net_g_weight_visual_config.get('visualize_during_val', False)
-            if save_feat:
-                target_net = getattr(self, 'net_g_ema', self.net_g)
-                self.setup_feature_hooks(
-                    target_net=target_net,
-                    net_name=self.net_g_weight_visual_config.get('name', 'net_g'),
-                    layer_names=self.net_g_weight_visual_config.get('visualize_layers')
+            cfg = self.net_g_weight_visual_config
+            should_vis = (
+                cfg.get('visualize_during_val', False)
+                and cfg.get('visualize_layers')
+                and idx < cfg.get('visualize_max_val_images', 3)
+            )
+
+            if should_vis:
+                vis_dir = osp.join(
+                    self.opt['path'].get('visualization', 'visualization'),
+                    dataset_name, 'features', img_name
                 )
-
-                
-            self.test()
-
-
-            if save_feat and hasattr(self, '_captured_features'):
-                vis_dir = osp.join(self.opt['path'].get('visualization', 'visualization'), 
-                                   dataset_name, 'features', f'{img_name}')
-                self.save_captured_features(
-                    vis_dir,
-                    net_name=self.net_g_weight_visual_config.get('name'),
-                    prefix=f'iter_{current_iter}'
-                )
-                self.remove_feature_hooks()
+                with self.feature_visualization(vis_dir, f'iter_{current_iter}'):
+                    self.test()
+            else:
+                self.test()
             
             visuals = self.get_current_visuals()
             sr_img = tensor2img([visuals['result']])

@@ -1,4 +1,4 @@
-import os
+import os.path as osp
 
 import torch
 from torch.nn import functional as F
@@ -22,33 +22,23 @@ class SwinIRModel(SRModel):
             mod_pad_w = window_size - w % window_size
         img = F.pad(self.lq, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
 
-        # base test start
         target_net = getattr(self, 'net_g_ema', self.net_g)
         target_net.eval()
 
-        do_visualize = self.net_g_weight_visual_config.get('visualize_layers') and self.net_g_weight_visual_config.get('visualize_during_test', False)
+        cfg = self.net_g_weight_visual_config
+        do_visualize = cfg.get('visualize_layers') and cfg.get('visualize_during_test', False)
+
         if do_visualize:
-            self.setup_feature_hooks(
-                target_net=target_net,
-                net_name=self.net_g_weight_visual_config.get('name', 'net_g'),
-                layer_names=self.net_g_weight_visual_config.get('visualize_layers')
-            )
-
-        with torch.no_grad():
-            self.output = target_net(img)
-
-        if do_visualize and hasattr(self, '_captured_features'):
-            vis_dir = os.path.join(self.opt['path'].get('visualization', 'visualization'), 'features')
+            vis_dir = osp.join(self.opt['path'].get('visualization', 'visualization'), 'features')
             prefix = f'iter_{getattr(self, "current_iter", "test")}'
-            self.save_captured_features(
-                vis_dir, 
-                net_name=self.net_g_weight_visual_config.get('name', 'CATANet'),
-                prefix=prefix
-            )
-            self.remove_feature_hooks()
+            with self.feature_visualization(vis_dir, prefix, target_net):
+                with torch.no_grad():
+                    self.output = target_net(img)
+        else:
+            with torch.no_grad():
+                self.output = target_net(img)
 
         if not hasattr(self, 'net_g_ema'):
             self.net_g.train()
-        # end
 
         self.output = self.output[:, :, :h * scale, :w * scale]
