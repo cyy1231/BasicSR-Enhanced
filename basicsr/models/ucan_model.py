@@ -6,7 +6,6 @@ from basicsr.models.sr_model import SRModel
 from basicsr.metrics import calculate_metric
 from basicsr.utils import imwrite, tensor2img
 
-import math
 from os import path as osp
 
 
