@@ -134,7 +134,6 @@ class IRCA(nn.Module):
 
         return k,v, x_global.detach()
     
-    
 class TAB(nn.Module):
     def __init__(self, dim, qk_dim, mlp_dim, heads, n_iter=3,
                  num_tokens=8, group_size=128,
@@ -205,87 +204,6 @@ class TAB(nn.Module):
             
     
         return rearrange(x, 'b (h w) c->b c h w',h=h)
-        
-        
-        
-
-def patch_divide(x, step, ps):
-    """Crop image into patches.
-    Args:
-        x (Tensor): Input feature map of shape(b, c, h, w).
-        step (int): Divide step.
-        ps (int): Patch size.
-    Returns:
-        crop_x (Tensor): Cropped patches.
-        nh (int): Number of patches along the horizontal direction.
-        nw (int): Number of patches along the vertical direction.
-    """
-    b, c, h, w = x.size()
-    if h == ps and w == ps:
-        step = ps
-    crop_x = []
-    nh = 0
-    for i in range(0, h + step - ps, step):
-        top = i
-        down = i + ps
-        if down > h:
-            top = h - ps
-            down = h
-        nh += 1
-        for j in range(0, w + step - ps, step):
-            left = j
-            right = j + ps
-            if right > w:
-                left = w - ps
-                right = w
-            crop_x.append(x[:, :, top:down, left:right])
-    nw = len(crop_x) // nh
-    crop_x = torch.stack(crop_x, dim=0)  # (n, b, c, ps, ps)
-    crop_x = crop_x.permute(1, 0, 2, 3, 4).contiguous()  # (b, n, c, ps, ps)
-    return crop_x, nh, nw
-
-
-def patch_reverse(crop_x, x, step, ps):
-    """Reverse patches into image.
-    Args:
-        crop_x (Tensor): Cropped patches.
-        x (Tensor): Feature map of shape(b, c, h, w).
-        step (int): Divide step.
-        ps (int): Patch size.
-    Returns:
-        output (Tensor): Reversed image.
-    """
-    b, c, h, w = x.size()
-    output = torch.zeros_like(x)
-    index = 0
-    for i in range(0, h + step - ps, step):
-        top = i
-        down = i + ps
-        if down > h:
-            top = h - ps
-            down = h
-        for j in range(0, w + step - ps, step):
-            left = j
-            right = j + ps
-            if right > w:
-                left = w - ps
-                right = w
-            output[:, :, top:down, left:right] += crop_x[:, index]
-            index += 1
-    for i in range(step, h + step - ps, step):
-        top = i
-        down = i + ps - step
-        if top + ps > h:
-            top = h - ps
-        output[:, :, top:down, :] /= 2
-    for j in range(step, w + step - ps, step):
-        left = j
-        right = j + ps - step
-        if left + ps > w:
-            left = w - ps
-        output[:, :, :, left:right] /= 2
-    return output
-
 
 class PreNorm(nn.Module):
     """Normalization layer.
@@ -302,8 +220,6 @@ class PreNorm(nn.Module):
     def forward(self, x, **kwargs):
         return self.fn(self.norm(x), **kwargs)
 
-
-
 class dwconv(nn.Module):
     def __init__(self, hidden_features, kernel_size=5):
         super(dwconv, self).__init__()
@@ -317,7 +233,6 @@ class dwconv(nn.Module):
         x = self.depthwise_conv(x)
         x = x.flatten(2).transpose(1, 2).contiguous()
         return x
-
 
 class ConvFFN(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, kernel_size=5, act_layer=nn.GELU):
@@ -335,39 +250,6 @@ class ConvFFN(nn.Module):
         x = x + self.dwconv(x, x_size)
         x = self.fc2(x)
         return x
-
-
-class Attention(nn.Module):
-    """Attention module.
-    Args:
-        dim (int): Base channels.
-        heads (int): Head numbers.
-        qk_dim (int): Channels of query and key.
-    """
-
-    def __init__(self, dim, heads, qk_dim):
-        super().__init__()
-
-        self.heads = heads
-        self.dim = dim
-        self.qk_dim = qk_dim
-        self.scale = qk_dim ** -0.5
-
-        self.to_q = nn.Linear(dim, qk_dim, bias=False)
-        self.to_k = nn.Linear(dim, qk_dim, bias=False)
-        self.to_v = nn.Linear(dim, dim, bias=False)
-        self.proj = nn.Linear(dim, dim, bias=False)
-        
-        
-
-    def forward(self, x):
-        q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
-       
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h=self.heads), (q, k, v))
-      
-        out = F.scaled_dot_product_attention(q,k,v)
-        out = rearrange(out, 'b h n d -> b n (h d)')
-        return self.proj(out)
 
 class GlobalLinearAttention(nn.Module):
     """
@@ -458,8 +340,6 @@ class LRSA(nn.Module):
         x = rearrange(x, 'b (h w) c -> b c h w', h=h)
         return x
 
-
-    
 @ARCH_REGISTRY.register()
 class LinearCATANet(nn.Module):
     setting = dict(dim=40, block_num=8, qk_dim=36, mlp_dim=96, heads=4, 
@@ -575,9 +455,6 @@ class LinearCATANet(nn.Module):
         return '#Params of {}: {:<.4f} [K]'.format(self._get_name(),
                                                       num_parameters / 10 ** 3) 
   
-  
-
-
 if __name__ == '__main__':
 
 
