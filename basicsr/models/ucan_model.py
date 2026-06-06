@@ -6,8 +6,6 @@ from basicsr.models.sr_model import SRModel
 from basicsr.metrics import calculate_metric
 from basicsr.utils import imwrite, tensor2img
 
-import math
-from tqdm import tqdm
 from os import path as osp
 
 
@@ -26,6 +24,10 @@ class UCANModel(SRModel):
         # 1. Determine tile count (target ~200px per tile)
         n_h = h // 200 + 1
         n_w = w // 200 + 1
+
+        if n_h == 1 and n_w == 1:
+            super().test()
+            return
 
         # 2. Reflect-pad so that H/W are divisible by tile count
         mod_pad_h = (n_h - h % n_h) % n_h
@@ -85,7 +87,7 @@ class UCANModel(SRModel):
 
         with torch.no_grad():
             outputs = []
-            for idx, chop in enumerate(tqdm(img_chops, desc='Tile inference')):
+            for idx, chop in enumerate(img_chops):
                 out = target_net(chop)
                 outputs.append(out)
                 
